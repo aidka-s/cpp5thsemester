@@ -2,6 +2,7 @@
 #include <iostream>
 #include <filesystem>
 #include <windows.h>
+
 namespace fs = std::filesystem;
 
 void PluginManager::loadPlugins(const std::string& folder) {
@@ -21,13 +22,35 @@ void PluginManager::loadPlugins(const std::string& folder) {
                 std::cerr << "Failed to load " << path << std::endl;
                 continue;
             }
+            using CreateFunc = IFunction* (*)();
+            CreateFunc create = (CreateFunc)GetProcAddress(dll, "create");
 
-            dlls.push_back(dll);
-            std::cout << "Loaded: " << entry.path().filename().string() << std::endl;
+            if (!create) {
+                std::cerr << "⚠️  No create() found in " << path << std::endl;
+                FreeLibrary(dll);
+                continue;
+            }
+
+            IFunction* func = nullptr;
+            try {
+                func = create();
+                functions.push_back(func);
+                dlls.push_back(dll);
+                std::cout << "✅ Loaded plugin: " << func->name() << std::endl;
+            } catch (...) {
+                std::cerr << "⚠️  Exception while initializing " << path << std::endl;
+                FreeLibrary(dll);
+            }
         }
     }
 
-    if (dlls.empty())
-        std::cout << "No plugins loaded.\n";
+    if (functions.empty())
+        std::cout << "No valid plugins loaded.\n";
 }
 
+void PluginManager::unloadPlugins() {
+    for (auto f : functions) delete f;
+    for (auto d : dlls) FreeLibrary(d);
+    functions.clear();
+    dlls.clear();
+}

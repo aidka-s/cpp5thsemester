@@ -1,15 +1,16 @@
 #pragma once
-#include "IFunction.h"
 #include <vector>
 #include <string>
-#include <memory>
+#include <windows.h>
+#include "IFunction.h"
 
 class PluginManager {
 public:
     void loadPlugins(const std::string& folder);
-    const std::vector<std::shared_ptr<IFunction>>& functions() const { return funcs; }
+    void unloadPlugins();
+    const std::vector<IFunction*>& getFunctions() const { return functions; }
 
 private:
-    std::vector<void*> dlls;
-    std::vector<std::shared_ptr<IFunction>> funcs;
+    std::vector<HMODULE> dlls;
+    std::vector<IFunction*> functions;
 };
