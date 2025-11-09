@@ -6,3 +6,8 @@ add_executable(calc
         src/main.cpp
         src/ExpressionEvaluator.cpp
         src/PluginManager.cpp)
+target_link_libraries(calc PRIVATE ${CMAKE_DL_LIBS})
+# Build example plugin (FuncSin)
+add_library(funcsin SHARED plugins_src/FuncSin.cpp)
+target_include_directories(funcsin PRIVATE ${CMAKE_SOURCE_DIR}/src)
+set_target_properties(funcsin PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/plugins)
