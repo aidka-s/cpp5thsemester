@@ -11,7 +11,16 @@ int main() {
     PluginManager manager;
     manager.loadPlugins("./plugins");
 
-    ExpressionEvaluator evaluator;
+    // Вывод списка загруженных функций
+    const auto& funcs = manager.getFunctions();
+    if (!funcs.empty()) {
+        std::cout << "Loaded functions:\n";
+        for (auto f : funcs) {
+            std::cout << "- " << f->name() << std::endl;
+        }
+    }
+
+    ExpressionEvaluator evaluator(funcs);
 
     std::string expr;
     std::cout << "Enter expression: ";
@@ -23,6 +32,8 @@ int main() {
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
     }
+
+    manager.unloadPlugins();
 
     std::cout << "==========================\n";
     return 0;

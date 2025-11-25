@@ -19,7 +19,7 @@ void PluginManager::loadPlugins(const std::string& folder) {
             HMODULE dll = LoadLibraryA(path.c_str());
 
             if (!dll) {
-                std::cerr << "Failed to load " << path << std::endl;
+                std::cerr << "Failed to load " << path << ": " << GetLastError() << std::endl;
                 continue;
             }
             using CreateFunc = IFunction* (*)();
@@ -34,11 +34,19 @@ void PluginManager::loadPlugins(const std::string& folder) {
             IFunction* func = nullptr;
             try {
                 func = create();
+                if (!func) {
+                    throw std::runtime_error("create() returned null");
+                }
                 functions.push_back(func);
                 dlls.push_back(dll);
-                std::cout << "✅ Loaded plugin: " << func->name() << std::endl;
+                std::cout << "Loaded plugin: " << func->name() << std::endl;
+            } catch (const std::exception& e) {
+                std::cerr << "⚠️  Exception while initializing " << path << ": " << e.what() << std::endl;
+                if (func) delete func;
+                FreeLibrary(dll);
             } catch (...) {
-                std::cerr << "⚠️  Exception while initializing " << path << std::endl;
+                std::cerr << "⚠️  Unknown exception while initializing " << path << std::endl;
+                if (func) delete func;
                 FreeLibrary(dll);
             }
         }

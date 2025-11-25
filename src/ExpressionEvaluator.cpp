@@ -1,87 +1,164 @@
 #include "ExpressionEvaluator.h"
-#include <iostream>
-#include <string>
 #include <cctype>
 #include <stdexcept>
-
+#include <cmath>        // ← std::pow
+#include <string>
+#include <vector>
 
 namespace {
     class Parser {
     public:
-        explicit Parser(const std::string& s) : str(s), pos(0) {}
+        Parser(const std::string& s, const std::vector<IFunction*>& funcs)
+            : str(s), pos(0), functions(funcs) {}
 
-        double parse() { return parseExpression(); }
+        double parse() {
+            double result = parseExpression();
+            skip();
+            if (pos < str.size())
+                throw std::runtime_error("Extra characters after expression");
+            return result;
+        }
 
     private:
-        std::string str;
+        const std::string& str;
         size_t pos;
+        const std::vector<IFunction*>& functions;
 
         void skip() {
-            while (pos < str.size() && isspace(str[pos])) ++pos;
+            while (pos < str.size() && std::isspace(static_cast<unsigned char>(str[pos])))
+                ++pos;
         }
 
         double number() {
             skip();
-            double val = 0;
-            bool dot = false;
-            double frac = 0.1;
-            if (pos >= str.size()) throw std::runtime_error("unexpected end");
+            if (pos >= str.size())
+                throw std::runtime_error("Unexpected end of input");
 
-            if (!isdigit(str[pos]) && str[pos] != '.')
-                throw std::runtime_error("expected number");
+            size_t start = pos;
+            if (str[pos] == '.') ++pos;
+            while (pos < str.size() && (std::isdigit(static_cast<unsigned char>(str[pos])) || str[pos] == '.'))
+                ++pos;
 
-            while (pos < str.size() && (isdigit(str[pos]) || str[pos] == '.')) {
-                if (str[pos] == '.') { dot = true; ++pos; continue; }
-                int d = str[pos++] - '0';
-                if (dot) { val += d * frac; frac /= 10; }
-                else val = val * 10 + d;
-            }
-            return val;
+            if (start == pos)
+                throw std::runtime_error("Expected number");
+
+            return std::stod(str.substr(start, pos - start));
         }
 
-        double factor() {
+        std::string identifier() {
             skip();
+            size_t start = pos;
+            if (pos >= str.size() || !std::isalpha(static_cast<unsigned char>(str[pos])))
+                throw std::runtime_error("Expected function name");
+
+            while (pos < str.size() && std::isalnum(static_cast<unsigned char>(str[pos])))
+                ++pos;
+
+            return str.substr(start, pos - start);
+        }
+
+        IFunction* findFunction(const std::string& name) const {
+            for (auto* f : functions)
+                if (f->name() == name)
+                    return f;
+            return nullptr;
+        }
+
+        double parsePrimary() {
+            skip();
+
+            // Число
+            if (pos < str.size() && (std::isdigit(static_cast<unsigned char>(str[pos])) || str[pos] == '.')) {
+                return number();
+            }
+
+            // Скобки
             if (pos < str.size() && str[pos] == '(') {
                 ++pos;
                 double val = parseExpression();
                 skip();
                 if (pos >= str.size() || str[pos] != ')')
-                    throw std::runtime_error("missing )");
+                    throw std::runtime_error("Expected ')'");
                 ++pos;
                 return val;
             }
-            return number();
+
+            // Функция из плагина: sin(30), deg(...)
+            std::string name = identifier();
+            IFunction* func = findFunction(name);
+            if (!func)
+                throw std::runtime_error("Unknown function: " + name);
+
+            skip();
+            if (pos >= str.size() || str[pos] != '(')
+                throw std::runtime_error("Expected '(' after function name");
+
+            ++pos;
+            double arg = parseExpression();
+            skip();
+            if (pos >= str.size() || str[pos] != ')')
+                throw std::runtime_error("Expected ')' after function argument");
+
+            ++pos;
+            return func->execute(arg);
         }
 
-        double term() {
-            double val = factor();
+        double parsePower() {
+            double left = parsePrimary();
+            skip();
+            while (pos < str.size() && str[pos] == '^') {
+                ++pos;
+                double right = parsePower();  // Right-associative
+                left = std::pow(left, right);
+            }
+            return left;
+        }
+
+        double parseTerm() {
+            double val = parsePower();
             while (true) {
                 skip();
-                if (pos < str.size() && (str[pos] == '*' || str[pos] == '/')) {
-                    char op = str[pos++];
-                    double rhs = factor();
-                    val = (op == '*') ? val * rhs : val / rhs;
-                } else break;
+                if (pos >= str.size()) break;
+                char op = str[pos];
+                if (op != '*' && op != '/') break;
+                ++pos;
+                double rhs = parsePower();
+                if (op == '*') val *= rhs;
+                else {
+                    if (rhs == 0.0)
+                        throw std::runtime_error("Division by zero");
+                    val /= rhs;
+                }
             }
             return val;
         }
 
         double parseExpression() {
-            double val = term();
+            double val = parseTerm();
             while (true) {
                 skip();
-                if (pos < str.size() && (str[pos] == '+' || str[pos] == '-')) {
-                    char op = str[pos++];
-                    double rhs = term();
-                    val = (op == '+') ? val + rhs : val - rhs;
-                } else break;
+                if (pos >= str.size()) break;
+                char op = str[pos];
+                if (op != '+' && op != '-') break;
+                ++pos;
+                double rhs = parseTerm();
+                if (op == '+') val += rhs;
+                else val -= rhs;
             }
             return val;
         }
     };
 }
 
-double ExpressionEvaluator::evaluate(const std::string& expression) {
-    Parser parser(expression);
+// Конструктор
+ExpressionEvaluator::ExpressionEvaluator(const std::vector<IFunction*>& funcs)
+    : functions(funcs) {}
+
+// Основной метод
+double ExpressionEvaluator::evaluate(const std::string& expression) const {
+    if (expression.empty())
+        throw std::runtime_error("Empty expression");
+
+    Parser parser(expression, functions);
     return parser.parse();
 }
